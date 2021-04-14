@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" id="Definitions_07jg2a3" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="4.5.0">
+  <bpmn:process id="blueprint-full-delta-index-example" name="Onify Blueprint: Full and Delta indexing example&#10;" isExecutable="true">
+    <bpmn:serviceTask id="getOldestItem" name="Get oldest modifieddate for items">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="query">
+              <camunda:map>
+                <camunda:entry key="query">type:user</camunda:entry>
+                <camunda:entry key="pagesize">1</camunda:entry>
+                <camunda:entry key="sort">modifieddate,asc</camunda:entry>
+              </camunda:map>
+            </camunda:inputParameter>
+            <camunda:inputParameter name="url">/admin/items</camunda:inputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>onifyApiRequest</camunda:connectorId>
+        </camunda:connector>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="modifiedDate">
+            <camunda:script scriptFormat="js">const oldestModifiedDate = new Date(content.output.body.records[0].modifieddate);
+
+const dateDiffMilliseconds = Math.abs(Date.now() - oldestModifiedDate);
+const dateDiffHours = Math.round(dateDiffMilliseconds / 36e5);
+
+next(null, {
+  oldest: oldestModifiedDate,
+  oldestAgeHours: dateDiffHours
+});</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1p9eu0x</bpmn:incoming>
+      <bpmn:outgoing>Flow_0gy8rry</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_1p9eu0x" sourceRef="startEvent" targetRef="getOldestItem" />
+    <bpmn:endEvent id="endEvent" name="Finished indexing">
+      <bpmn:incoming>Flow_0i3gidq</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_0gy8rry" sourceRef="getOldestItem" targetRef="gatewayModifiedDateAge" />
+    <bpmn:exclusiveGateway id="gatewayModifiedDateAge" name="Modifieddate age?" default="flowLessThan24Hours">
+      <bpmn:incoming>Flow_0gy8rry</bpmn:incoming>
+      <bpmn:outgoing>flowMoreThan24Hours</bpmn:outgoing>
+      <bpmn:outgoing>flowLessThan24Hours</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:startEvent id="startEvent" name="Start indexing&#10;(every hour)">
+      <bpmn:outgoing>Flow_1p9eu0x</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_1k4u64h">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 * * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="flowMoreThan24Hours" name="More than 24 hours" sourceRef="gatewayModifiedDateAge" targetRef="getAllRecords">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${environment.output.modifiedDate.oldestAgeHours &gt; 24}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flowLessThan24Hours" name="Less than 24 hours" sourceRef="gatewayModifiedDateAge" targetRef="getUpdatedRecords" />
+    <bpmn:serviceTask id="bulkIndex" name="Bulk index &#10;items">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="payload">${environment.output.userItems}</camunda:inputParameter>
+            <camunda:inputParameter name="method">POST</camunda:inputParameter>
+            <camunda:inputParameter name="url">/admin/bulk/items</camunda:inputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>onifyApiRequest</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_01gv9r5</bpmn:incoming>
+      <bpmn:incoming>Flow_119n7ar</bpmn:incoming>
+      <bpmn:outgoing>Flow_0i3gidq</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_01gv9r5" sourceRef="getAllRecords" targetRef="bulkIndex" />
+    <bpmn:sequenceFlow id="Flow_119n7ar" sourceRef="getUpdatedRecords" targetRef="bulkIndex" />
+    <bpmn:sequenceFlow id="Flow_0i3gidq" sourceRef="bulkIndex" targetRef="endEvent" />
+    <bpmn:subProcess id="getAllRecords" name="Full index:&#10;Get all records">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="userItems">
+            <camunda:script scriptFormat="js">next(null, []);</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flowMoreThan24Hours</bpmn:incoming>
+      <bpmn:outgoing>Flow_01gv9r5</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="getUpdatedRecords" name="Delta index:&#10;Get updated records">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="userItems">
+            <camunda:script scriptFormat="js">next(null, []);</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>flowLessThan24Hours</bpmn:incoming>
+      <bpmn:outgoing>Flow_119n7ar</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:textAnnotation id="TextAnnotation_1hp814f">
+      <bpmn:text>Update with correct schedule</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_1agurpq" sourceRef="startEvent" targetRef="TextAnnotation_1hp814f" />
+    <bpmn:textAnnotation id="TextAnnotation_0b63r6s">
+      <bpmn:text>Update with correct item query</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_1av0yup" sourceRef="getOldestItem" targetRef="TextAnnotation_0b63r6s" />
+    <bpmn:textAnnotation id="TextAnnotation_1lxbhqw">
+      <bpmn:text>Update with correct integration</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_1o36uhw" sourceRef="getAllRecords" targetRef="TextAnnotation_1lxbhqw" />
+    <bpmn:textAnnotation id="TextAnnotation_0awm2h2">
+      <bpmn:text>Update with correct integration</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_0xljra3" sourceRef="getUpdatedRecords" targetRef="TextAnnotation_0awm2h2" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="blueprint-full-delta-index-example">
+      <bpmndi:BPMNShape id="TextAnnotation_1hp814f_di" bpmnElement="TextAnnotation_1hp814f">
+        <dc:Bounds x="220" y="180" width="160" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_0b63r6s_di" bpmnElement="TextAnnotation_0b63r6s">
+        <dc:Bounds x="330" y="390" width="125" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_1lxbhqw_di" bpmnElement="TextAnnotation_1lxbhqw">
+        <dc:Bounds x="720" y="80" width="150" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_0awm2h2_di" bpmnElement="TextAnnotation_0awm2h2">
+        <dc:Bounds x="720" y="470" width="120" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_0i3gidq_di" bpmnElement="Flow_0i3gidq">
+        <di:waypoint x="911" y="287" />
+        <di:waypoint x="992" y="287" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_119n7ar_di" bpmnElement="Flow_119n7ar">
+        <di:waypoint x="714" y="390" />
+        <di:waypoint x="861" y="390" />
+        <di:waypoint x="861" y="327" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_01gv9r5_di" bpmnElement="Flow_01gv9r5">
+        <di:waypoint x="714" y="200" />
+        <di:waypoint x="861" y="200" />
+        <di:waypoint x="861" y="247" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1egf7qi_di" bpmnElement="flowLessThan24Hours">
+        <di:waypoint x="480" y="312" />
+        <di:waypoint x="480" y="390" />
+        <di:waypoint x="614" y="390" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="520" y="406" width="63" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_05ferkr_di" bpmnElement="flowMoreThan24Hours">
+        <di:waypoint x="480" y="262" />
+        <di:waypoint x="480" y="200" />
+        <di:waypoint x="614" y="200" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="507" y="156" width="65" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0gy8rry_di" bpmnElement="Flow_0gy8rry">
+        <di:waypoint x="380" y="287" />
+        <di:waypoint x="455" y="287" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1p9eu0x_di" bpmnElement="Flow_1p9eu0x">
+        <di:waypoint x="215" y="287" />
+        <di:waypoint x="280" y="287" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Activity_06vezgo_di" bpmnElement="getOldestItem" bioc:stroke="black" bioc:fill="white">
+        <dc:Bounds x="280" y="247" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0jh1u3j_di" bpmnElement="endEvent">
+        <dc:Bounds x="992" y="269" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="967" y="312" width="86" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1gjtr3v_di" bpmnElement="gatewayModifiedDateAge" isMarkerVisible="true">
+        <dc:Bounds x="455" y="262" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="516" y="273" width="64" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_029bdl2_di" bpmnElement="startEvent">
+        <dc:Bounds x="179" y="269" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="163" y="312" width="68" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_020fn67_di" bpmnElement="bulkIndex">
+        <dc:Bounds x="811" y="247" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1h1647e_di" bpmnElement="getAllRecords">
+        <dc:Bounds x="614" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0s5boyu_di" bpmnElement="getUpdatedRecords">
+        <dc:Bounds x="614" y="350" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Association_1agurpq_di" bpmnElement="Association_1agurpq">
+        <di:waypoint x="208" y="273" />
+        <di:waypoint x="250" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_1av0yup_di" bpmnElement="Association_1av0yup">
+        <di:waypoint x="347" y="327" />
+        <di:waypoint x="374" y="390" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_1o36uhw_di" bpmnElement="Association_1o36uhw">
+        <di:waypoint x="704" y="160" />
+        <di:waypoint x="745" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_0xljra3_di" bpmnElement="Association_0xljra3">
+        <di:waypoint x="708" y="429" />
+        <di:waypoint x="753" y="470" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
