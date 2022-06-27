@@ -6,7 +6,7 @@
 
 Example how to initiate either full- or delta (changes) indexing based on oldest items modified date. In this case we check if items are older than 24 hours. The workflow (process) will be scheduled to run every hour according to cron job settings.
 
-![alt text](flow.png "Flow (BPMN)")
+![Onify Blueprint: Full and Delta indexing example](blueprint.jpg "Blueprint")
 
 ## Requirements
 
